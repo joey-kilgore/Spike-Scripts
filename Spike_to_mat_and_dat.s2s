@@ -1,0 +1,131 @@
+' This file prompts converts all the SPIKE data files in a directory into
+' Matlab files.  The user is prompted to select a directory.
+' The Matlab file consists of structures that correspond to the channel
+' labels for each SPIKE file.  Each structure includes: title, comment, interval, scale, 
+' offset, units, start, length, values.
+' The "values" field is the data points.  The interval is the time in seconds between points.
+'
+'  example:  To get an array of time in matlab:
+'  time = (Force.interval:Force.interval:(Force.length*Force.interval));
+'
+' After exporting the data, a Spike.dat file is created that is a csv format showing the following
+'   
+'   nameOfData, t@spike1, t@spike2, ... , t@spike<maxSpikes>
+'
+' this can then be manipulated in matlab to find the times of each spike to make for simple plotting
+'   with less guess work required.
+'
+' NOTE:
+'   go through and check that all parameters are set to values that make sense. each should
+'   be sufficiently documented that anyone can adjust their values with little effort
+'   *MAKE SURE THE LOG IS BLANK PRIOR TO RUNNING THIS SCRIPT*
+
+' File processing variables
+var v18%;                   ' View created by FileOpen()
+var aStr$[200];             ' String of file name
+var FileStr$,FinalFileStr$; ' Temp file string and final string for the Matlab file
+var StringLen%;             ' Length of the loaded file name
+var NumofFiles%;            ' Total number of files in the directory
+var FileIndex%;             ' Current File index
+
+' Channel Metric variables
+var ChanEnd%;               ' Time of last point in seconds
+var NumofPoints%;           ' Total number of points in the file
+var StartPoint%;            ' First point to export
+var LastPoint%;             ' Last point to export
+var FileNumber%;            ' The number of the file in the reduced data set
+var BinAdj%;                ' Adjustment to the bin for a large file size
+var OutputStr$;             ' Command string for file output
+
+' Constants
+const SamplingRate% := 1000;    ' Sampling rate to downsample the data
+
+' Finding spike time variables
+var maxSpikes% := 100;      ' maximum number of spikes that will be recorded starting from the beginning of the data file
+var threshTime;             ' this is a temporary variable used while iterating through the data
+var peaks[100];             ' array to store all spike times recorded
+var chanNum% := 2;          ' channel number that will be checked for any spikes that go above the tresh value
+var thresh := 5;            ' value that will trigger a spike to be recorded
+var mTime;                  ' temporary holder for the max time of a file
+var savedChanSearch;        ' temporary variable to hold spike times
+
+
+' Select the directory to process
+'FilePathSet("F:\\SINERat168"); 'Default directory
+FilePathSet("F:\\Data\\Rat Data\\",0,"Please select directory");
+NumofFiles% := FileList(aStr$,0); 'Determine the number of files.  aStr holds the file names
+
+'Process all the files
+for FileIndex% :=0 to (NumofFiles%-1) do
+    
+    'Open the file
+    v18%:=FileOpen(aStr$[FileIndex%],0,3);
+    
+    'Create a Matlab file name that matches the SPIKE file name
+    StringLen% := Len(aStr$[FileIndex%]);
+    FileStr$ := Mid$(aStr$[FileIndex%],1,(StringLen%-5));
+    FinalFileStr$:=Print$(FileStr$,"_s500.mat");
+    
+    'Load the data
+    WindowVisible(3);
+    WindowVisible(3);
+    ExportChanList(1); 'Initialise the channel list
+    ChanEnd% := Maxtime(); ' Determine the end time
+    NumofPoints% := ChanEnd%/Binsize(); 'Determine the total number of points
+    
+        
+    'Export the data
+    ExportChanList(0, ChanEnd%, 3,4);   ' NOTE: this is where you can set which channels you wish to export to .mat
+    OutputStr$:=Print$("UseSName=0|UseCName=1|WaveTimes=0|BinFreq=",Str$(SamplingRate%),"|BinTimes=0|WaveData=2|MarkAs=1|TMarkAs=2|RMarkAs=2|RMarkData=2|WaveMarkAs=2|WaveMarkData=2|Compat=0|WaveAll=1|WaveSameN=0");
+    FileSaveAs(FinalFileStr$,100,0,"",0,OutputStr$); 'Export (string args)
+    
+    ' To ensure that our data is opened for processing spike times, we open it again
+    v18%:=FileOpen(aStr$[FileIndex%],0,3);
+    
+    ' The following code adds ability for users to save the peaks a specific channel
+    '   adjust the following parameters as necessary
+    threshTime := 0.00000;          ' reset various temporary variables used during this process
+    mTime := MaxTime(chanNum%);
+    savedChanSearch := 0;
+
+    var index% := 0;                    ' we need to set all values of peaks to -1 to ensure we know which
+    for index% := 0 to maxSpikes%-1 do    '  times are recorded from data
+        peaks[index%] := -1;
+    next;
+    
+    index% := 0;                        ' reset the temp variable
+    
+    while (threshTime < mTime and index% < maxSpikes%) do   ' loop while we are still under the max time of the file,
+                                                            '   and we have not exceeded the maximum number of spikes to record
+                
+        savedChanSearch := ChanSearch(chanNum%, 7, threshTime, mTime, thresh);
+        ' ChanSearch does most of the work here
+        '   Returns: First pass of the threshold value between the times given on the specified channel
+        '               or will return -1 if now times were found within the bounds given
+        '   Params:
+        '   chanNum%    -> channel number to search through
+        '   7           -> specifies we are looking for something to cross the threshold upwards
+        '   threshTime  -> starting time for our search
+        '   mTime       -> ending time for our search
+        '   thresh      -> theshold value of the search
+        
+        if(savedChanSearch <> -1) then              ' If a -1 was return then no spike was found
+            peaks[index%] := savedChanSearch;       ' since -1 was not returned we can record that spike time
+            index% += 1;
+            threshTime := NextTime(chanNum%, savedChanSearch);  ' set the bounds one time step after the spike we found
+            
+        else                            ' if -1 was returned then we have no more spikes to find
+            threshTime := mTime;        ' setting the temporary variable to the max time will force us to end our while loop
+        endif
+    wend
+    ' at this point index%-1 tells us the max index of peaks that contains a recorded spike
+    
+                                        ' output the following to the log window as a single row in csv format
+    PrintLog("%s,",FileStr$);           ' name of data file (no extension)
+    PrintLog("%f",peaks[:(index%-1)]);  ' all the time values recorded
+    PrintLog("\n");                     ' end of line character for the next file
+    FileClose(1);   ' always remember to close the file
+next;
+' at this point all the data has been exported to .mat file, and all the spike times have been recorded to the log window
+' the log window needs to then be saved to file
+FileSaveAs("spikes.dat",1);     ' saves the log window to file
