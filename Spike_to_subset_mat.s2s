@@ -1,0 +1,29 @@
+' This File takes a given spike data file (.smrx) and then exports a subset of that
+'   data to a (.mat) file
+' The matlab file consists of structures that correspond to the channel
+'   labels for each SPIKE file. Each structure includes: title, comment, 
+'   interval, scale, offset, units, start, length, values.
+'   The "values" field is all the data points. The interval is the time in seconds 
+'   between the points.
+'
+'   example: to get an array of time in matlab, given a Force channel
+'   time = (0:Force.length-1).*Block.interval + Block.start;
+'
+
+' The entire process is abstracted using this single function call
+SaveDataRanged("E:\\ExportedMatlabData\\trial1_t50_to_t60.mat", 50, 60, 1000);
+' "C:\\...\\fileName.mat"   ->  name of matlab file that the data will be saved to
+' 50                        ->  start of time range that will be saved
+' 60                        ->  end of time range that will be saved
+' 1000                      ->  exported frequency of the data
+' (*) Note that within the method that you should check the channels that you will be saving
+
+func SaveDataRanged(FinalFileStr$, startTime, endTime, SamplingRate%)
+' SaveDataRanged takes in a set of parameters and then export that data range to a file.
+ExportChanList(startTime, endTime, 3,4);   ' (*) NOTE: this is where you can set which channels you wish to export to .mat
+' startTime and endTime give the range of time that will be exported
+' 3,4 -> Change this list to the number of the channels you wish to export
+
+var OutputStr$:=Print$("UseSName=0|UseCName=1|WaveTimes=0|BinFreq=",Str$(SamplingRate%),"|BinTimes=0|WaveData=2|MarkAs=1|TMarkAs=2|RMarkAs=2|RMarkData=2|WaveMarkAs=2|WaveMarkData=2|Compat=0|WaveAll=1|WaveSameN=0");
+FileSaveAs(FinalFileStr$,100,0,"",0,OutputStr$); 'Export (string args)
+end
